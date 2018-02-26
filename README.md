@@ -28,7 +28,7 @@ Then, you can run:
 
 C:\msys32\mingw32.exe
 
-
+Copy **ESPIDF\azure_iot_esp32_component\azure-iot** to **esp-idf\components** 
 
 
 
