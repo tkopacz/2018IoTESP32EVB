@@ -34,7 +34,10 @@
 
 #include "soc/emac_ex_reg.h"
 #include "driver/periph_ctrl.h"
+
 #include "config.h"
+
+#include "dht11.h"
 
 /* Global */
 /* The event group allows multiple bits for each event,
@@ -81,12 +84,16 @@ static void initialise_wifi(void)
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK( esp_wifi_init(&cfg) );
     ESP_ERROR_CHECK( esp_wifi_set_storage(WIFI_STORAGE_RAM) );
-    wifi_config_t wifi_config = {
-        .sta = {
-            .ssid = EXAMPLE_WIFI_SSID,
-            .password = EXAMPLE_WIFI_PASS,
-        },
-    };
+    // wifi_config_t wifi_config = {
+    //     .sta = {
+    //         .ssid = EXAMPLE_WIFI_SSID,
+    //         .password = EXAMPLE_WIFI_PASS,
+    //     },
+    // };
+    wifi_config_t wifi_config;
+    strncpy((char*)wifi_config.sta.ssid,(char*)EXAMPLE_WIFI_SSID,sizeof(wifi_config.sta.ssid));
+    strncpy((char*)wifi_config.sta.password,(char*)EXAMPLE_WIFI_PASS,sizeof(wifi_config.sta.password));
+
     ESP_LOGI(TAG, "Setting WiFi configuration SSID %s...", wifi_config.sta.ssid);
     ESP_ERROR_CHECK( esp_wifi_set_mode(WIFI_MODE_STA) );
     ESP_ERROR_CHECK( esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_config) );
@@ -193,10 +200,10 @@ void initializeETH()
 
     eth_config_t config = DEFAULT_ETHERNET_PHY_CONFIG;
     /* Set the PHY address in the example configuration */
-    config.phy_addr = CONFIG_PHY_ADDRESS;
+    config.phy_addr = (eth_phy_base_t)CONFIG_PHY_ADDRESS;
     config.gpio_config = eth_gpio_config_rmii;
     config.tcpip_input = tcpip_adapter_eth_input;
-    config.clock_mode = CONFIG_PHY_CLOCK_MODE;
+    config.clock_mode = (eth_clock_mode_t)CONFIG_PHY_CLOCK_MODE;
 
 #ifdef CONFIG_PHY_USE_POWER_PIN
     /* Replace the default 'power enable' function with an example-specific
@@ -238,6 +245,13 @@ void azure_task(void *pvParameter)
         ESP_LOGI(TAG, "Connected to access point success");
     #endif
 
+    //DHTesp dht;
+    //dht.setup((gpio_num_t)5);
+    // while(1) {
+    //     vTaskDelay(10000 / portTICK_PERIOD_MS);
+    //     float temp = getTemp();
+    //     (void)printf("%f\r\n",temp);
+    // }
     //TK:
     tkSendEvents();
 }

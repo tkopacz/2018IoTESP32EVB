@@ -17,6 +17,17 @@
 #include "driver/gpio.h"
 #include "sdkconfig.h"
 #include <esp_system.h>
+
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "esp_attr.h"
+#include "nvs_flash.h"
+#include "nvs.h"
+#include "esp_partition.h"
+#include "esp_log.h"
+#include <sys/time.h>
+#include "math.h"
+#include "dht11.h"
 #include "config.h"
 
 #ifdef MBED_BUILD_TIMESTAMP
@@ -97,12 +108,12 @@ SetDelay {"DelayMs":5000}
 
 //EVB 31
 #define PIN_IN_ANALOG 36
-//EVB 6
+//EVB 6, DHT11
 #define PIN_IN_DIGITAL 05
 //EVB 13
 #define PIN_OUT_DIGITAL 12 
 
-#define BLINK_COUNT 100
+#define BLINK_COUNT 10
 
 static IOTHUBMESSAGE_DISPOSITION_RESULT ReceiveMessageCallback(IOTHUB_MESSAGE_HANDLE message, void *userContextCallback)
 {
@@ -199,12 +210,12 @@ static int DeviceMethodCallback(const char *method_name, const unsigned char *pa
     if (strcmp(method_name, "LedOn") == 0)
     {
         RESPONSE_STRING = "{ \"Response\": \"LedOn\" }";
-        gpio_set_level(PIN_OUT_DIGITAL, 1);
+        gpio_set_level((gpio_num_t)PIN_OUT_DIGITAL, 1);
     }
     else if (strcmp(method_name, "LedOff") == 0)
     {
         RESPONSE_STRING = "{ \"Response\": \"LedOff\" }";
-        gpio_set_level(PIN_OUT_DIGITAL, 0);
+        gpio_set_level((gpio_num_t)PIN_OUT_DIGITAL, 0);
     }
     else if (strcmp(method_name, "Reset") == 0)
     {
@@ -245,7 +256,7 @@ static int DeviceMethodCallback(const char *method_name, const unsigned char *pa
     printf("Response payload: %s\r\n\r\n", RESPONSE_STRING);
 
     *resp_size = strlen(RESPONSE_STRING);
-    if ((*response = malloc(*resp_size)) == NULL)
+    if ((*response = (unsigned char*)malloc(*resp_size)) == NULL)
     {
         status = -1;
     }
@@ -273,16 +284,16 @@ void tkSendEvents()
     //Setup pin to read - complicated, Z:\TSGIT\2017ESP32\esp-idf\examples\peripherals\gpio\main\gpio_example_main.c
     //TODO
     //Led
-    gpio_pad_select_gpio(PIN_OUT_DIGITAL);
+    gpio_pad_select_gpio((gpio_num_t)PIN_OUT_DIGITAL);
     /* Set the GPIO as a push/pull output */
-    gpio_set_direction(PIN_OUT_DIGITAL, GPIO_MODE_OUTPUT);
+    gpio_set_direction((gpio_num_t)PIN_OUT_DIGITAL, GPIO_MODE_OUTPUT);
 
     printf("blink_task - loop\n");
     for (int i = 0; i < BLINK_COUNT; i++)
     {
-        gpio_set_level(PIN_OUT_DIGITAL, 0);
+        gpio_set_level((gpio_num_t)PIN_OUT_DIGITAL, 0);
         vTaskDelay(100 / portTICK_PERIOD_MS);
-        gpio_set_level(PIN_OUT_DIGITAL, 1);
+        gpio_set_level((gpio_num_t)PIN_OUT_DIGITAL, 1);
         vTaskDelay(100 / portTICK_PERIOD_MS);
         printf("BLINK %d\n", i);
     }
@@ -333,12 +344,14 @@ void tkSendEvents()
                 // float vol = (val * 5.0) / 4096.0;
                 // float temp = 100.0 * vol;
 
-                float vol = ((4096-val) * 4.9) / 4096.0;
+                float vol = ((val) * 4.9) / 4096.0;
                 float temp = 10.0 * vol;
-                
+                getData(0); //Will set humidity,temperature
                 sprintf_s(msgText, sizeof(msgText), 
                 
-"{\"deviceId\":\"ESP32_IDF_EVB\",\"msgType\":\"esp32idfevb\",\"dt\":\"%s\", \"temp\":%f, \"data\":%d,\"datad\":%d,\"hall\":%d}",buff, temp, val, vald, valh);
+"{\"deviceId\":\"ESP32_IDF_EVB\",\"msgType\":\"esp32idfevb\",\"dt\":\"%s\", \"callbackCounter\":%d, \"dhthum\":%d,  \"dhttemp\":%d, \"temp\":%f, \"data\":%d,\"datad\":%d,\"hall\":%d}",
+buff,callbackCounter,
+getHumidity(),getTemperature(), temp, val, vald, valh);
                 (void)printf("%s\r\n", msgText);
                 if ((msg = IoTHubMessage_CreateFromByteArray((const unsigned char *)msgText, strlen(msgText))) == NULL)
                 {
@@ -386,8 +399,8 @@ void tkSendEvents()
     }
 }
 
-//TK: Not used
-int main(void)
-{
-    return 0;
-}
+// //TK: Not used
+// int main(void)
+// {
+//     return 0;
+// }
