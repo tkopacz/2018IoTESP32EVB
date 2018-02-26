@@ -1,0 +1,2 @@
+#!/bin/bash
+python /z/TSGIT/2017ESP32/esp-idf/components/esptool_py/esptool/esptool.py --chip esp32 --port /dev/ttyS2 --baud 115200 --before default_reset --after hard_reset write_flash -z --flash_mode dio --flash_freq 40m --flash_size detect 0x1000 /z/TSGIT/2017ESP32/tk_esp_idf_analog/build/bootloader/bootloader.bin 0x10000 /z/TSGIT/2017ESP32/tk_esp_idf_analog/build/esp32.bin 0x8000 /z/TSGIT/2017ESP32/tk_esp_idf_analog/build/partitions_singleapp.bin
