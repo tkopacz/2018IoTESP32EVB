@@ -35,9 +35,9 @@
 #include "soc/emac_ex_reg.h"
 #include "driver/periph_ctrl.h"
 
-#include "config.h"
+#include <esp_task_wdt.h>
 
-#include "dht11.h"
+#include "config.h"
 
 /* Global */
 /* The event group allows multiple bits for each event,
@@ -245,14 +245,6 @@ void azure_task(void *pvParameter)
         ESP_LOGI(TAG, "Connected to access point success");
     #endif
 
-    //DHTesp dht;
-    //dht.setup((gpio_num_t)5);
-    // while(1) {
-    //     vTaskDelay(10000 / portTICK_PERIOD_MS);
-    //     float temp = getTemp();
-    //     (void)printf("%f\r\n",temp);
-    // }
-    //TK:
     tkSendEvents();
 }
 
@@ -260,6 +252,7 @@ void azure_task(void *pvParameter)
 
 void app_main()
 {
+    esp_err_t result;
     nvs_flash_init();
     #ifdef TK_ETH
         initializeETH();
@@ -267,5 +260,12 @@ void app_main()
         initialise_wifi();
     #endif
 
+    //Called by make menuconfig
+    CHECK_ERROR_CODE(esp_task_wdt_init(20,true),ESP_OK);
+
+    TaskHandle_t t;
+
     xTaskCreate(&azure_task, "azure_task", 8192, NULL, 5, NULL);
+
+
 }

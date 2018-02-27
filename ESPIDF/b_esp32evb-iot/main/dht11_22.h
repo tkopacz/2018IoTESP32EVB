@@ -9,11 +9,11 @@
    software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
    CONDITIONS OF ANY KIND, either express or implied.
 */
-#ifndef DHT11_H_  
-#define DHT11_H_
+#ifndef DHT11_22_H_  
+#define DHT11_22_H_
 #define DHT_TIMEOUT_ERROR -2
 #define DHT_CHECKSUM_ERROR -1
-#define DHT_OKAY  0
+#define DHT_OK  0
 
 // function prototypes
 
@@ -22,17 +22,21 @@ extern "C" {
 #endif
 
 //Start by using this function
-void setDHTPin(int PIN);
+void setDHT11Pin(int PIN);
 //Do not need to touch these three
 void sendStart();
 void errorHandle(int response);
 
 //To get all 3 measurements
-int getData();
+int readDHT11();
+int readDHT22();
 
 int getTemperatureF();
 int getTemperature();
 int getHumidity();
+
+
+
 
 #ifdef __cplusplus
 }

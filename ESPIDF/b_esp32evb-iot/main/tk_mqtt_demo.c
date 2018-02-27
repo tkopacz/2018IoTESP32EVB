@@ -27,8 +27,11 @@
 #include "esp_log.h"
 #include <sys/time.h>
 #include "math.h"
-#include "dht11.h"
+#include <esp_task_wdt.h>
+
+#include "dht11_22.h"
 #include "config.h"
+#include "tk_mqtt_demo.h"
 
 #ifdef MBED_BUILD_TIMESTAMP
 #include "certs.h"
@@ -188,12 +191,15 @@ static IOTHUBMESSAGE_DISPOSITION_RESULT ReceiveMessageCallback(IOTHUB_MESSAGE_HA
 
 static void SendConfirmationCallback(IOTHUB_CLIENT_CONFIRMATION_RESULT result, void *userContextCallback)
 {
+    //Setup watchdog
+    CHECK_ERROR_CODE(esp_task_wdt_reset(), ESP_OK);
     //Passing address to IOTHUB_MESSAGE_HANDLE
     IOTHUB_MESSAGE_HANDLE *msg = (IOTHUB_MESSAGE_HANDLE *)userContextCallback;
     (void)printf("Confirmation %d result = %s\r\n", callbackCounter, ENUM_TO_STRING(IOTHUB_CLIENT_CONFIRMATION_RESULT, result));
     /* Some device specific action code goes here... */
     callbackCounter++;
-    IoTHubMessage_Destroy(*msg);
+    //TK: NO
+    //IoTHubMessage_Destroy(*msg);
 }
 
 static int DeviceMethodCallback(const char *method_name, const unsigned char *payload, size_t size, unsigned char **response, size_t *resp_size, void *userContextCallback)
@@ -275,6 +281,11 @@ static void IRAM_ATTR gpio_isr_handler(void *arg)
 
 void tkSendEvents()
 {
+    //Setup watchdog - live
+    CHECK_ERROR_CODE(esp_task_wdt_add(NULL), ESP_OK);
+    CHECK_ERROR_CODE(esp_task_wdt_status(NULL), ESP_OK);    
+    //esp_task_wdt_feed();
+
     //Setup adc
     adc1_config_width(ADC_WIDTH_12Bit);
     adc1_config_channel_atten(ADC1_CHANNEL_0, ADC_ATTEN_11db); //Connect light sensor to 3.3 V
@@ -334,6 +345,8 @@ void tkSendEvents()
 
             while (1)
             {
+                //TK: Uncomment to trigger watchdog
+                //if (callbackCounter>5) continue;
                 val = adc1_get_raw(ADC1_CHANNEL_0); //GPIO36
                 valh = hall_sensor_read();
                 time_t now = time (0);
@@ -346,7 +359,8 @@ void tkSendEvents()
 
                 float vol = ((val) * 4.9) / 4096.0;
                 float temp = 10.0 * vol;
-                getData(0); //Will set humidity,temperature
+                int dhtresult = readDHT22();//Will set humidity,temperature
+                printf("%d",dhtresult); 
                 sprintf_s(msgText, sizeof(msgText), 
                 
 "{\"deviceId\":\"ESP32_IDF_EVB\",\"msgType\":\"esp32idfevb\",\"dt\":\"%s\", \"callbackCounter\":%d, \"dhthum\":%d,  \"dhttemp\":%d, \"temp\":%f, \"data\":%d,\"datad\":%d,\"hall\":%d}",
@@ -387,8 +401,8 @@ getHumidity(),getTemperature(), temp, val, vald, valh);
                         ThreadAPI_Sleep(100);
                     }
 
-                    //Callback is responsible for destroying message
-                    //IoTHubMessage_Destroy(msg);
+                    //Callback is responsible for destroying message - NO
+                    IoTHubMessage_Destroy(msg);
 
                     ThreadAPI_Sleep(DelayMs);
                 }
