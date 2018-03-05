@@ -228,7 +228,7 @@ void initializeETH()
 void azure_task(void *pvParameter)
 {
     #ifdef TK_ETH
-        const TickType_t xTicksToWait = 20*1000 / portTICK_PERIOD_MS; // 10s
+        const TickType_t xTicksToWait = 60*1000 / portTICK_PERIOD_MS; // 60s
         ESP_LOGI(TAG, "Waiting for ETH ...");
     
         EventBits_t uxBits = xEventGroupWaitBits(eth_event_group, CONNECTED_BIT,
@@ -252,6 +252,10 @@ void azure_task(void *pvParameter)
 
 void app_main()
 {
+    //Called by make menuconfig
+    //CHECK_ERROR_CODE(esp_task_wdt_init(20,true),ESP_OK);
+    CHECK_ERROR_CODE(esp_task_wdt_init(2*360,true),ESP_OK); //1 message per 10 minutes
+
     esp_err_t result;
     nvs_flash_init();
     #ifdef TK_ETH
@@ -260,8 +264,6 @@ void app_main()
         initialise_wifi();
     #endif
 
-    //Called by make menuconfig
-    CHECK_ERROR_CODE(esp_task_wdt_init(20,true),ESP_OK);
 
     TaskHandle_t t;
 

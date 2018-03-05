@@ -41,7 +41,13 @@ static int callbackCounter;
 static char msgText[1024];
 static char propText[1024];
 static int vald = 0;
-static int DelayMs = 5000;
+static int DelayMs = 2000;
+
+static int NormalMsgDelayMs = 5 * 60 * 1000;
+
+static float tMin = 05.00;
+static float tMax = 15.00;
+
 
 /*-----------------------------------------------------------------
 Hardware connections
@@ -115,6 +121,16 @@ SetDelay {"DelayMs":5000}
 #define PIN_IN_DIGITAL 05
 //EVB 13
 #define PIN_OUT_DIGITAL 12 
+
+// Gateway
+// #define PIN_TOUCH 32 //T9, 32
+// #define TOUCH 9
+
+//EVB
+#define PIN_TOUCH 4 //T0, 4
+#define TOUCH 0
+#define TOUCH_THRESH_NO_USE   (0)
+
 
 #define BLINK_COUNT 10
 
@@ -198,12 +214,18 @@ static void SendConfirmationCallback(IOTHUB_CLIENT_CONFIRMATION_RESULT result, v
     (void)printf("Confirmation %d result = %s\r\n", callbackCounter, ENUM_TO_STRING(IOTHUB_CLIENT_CONFIRMATION_RESULT, result));
     /* Some device specific action code goes here... */
     callbackCounter++;
+    if (result != IOTHUB_CLIENT_CONFIRMATION_OK) 
+    {
+        esp_restart();
+    }
+
     //TK: NO
     //IoTHubMessage_Destroy(*msg);
 }
 
 static int DeviceMethodCallback(const char *method_name, const unsigned char *payload, size_t size, unsigned char **response, size_t *resp_size, void *userContextCallback)
 {
+    char resp[200];
     (void)userContextCallback;
 
     printf("\r\nDevice Method called\r\n");
@@ -230,9 +252,8 @@ static int DeviceMethodCallback(const char *method_name, const unsigned char *pa
     }
     else if (strcmp(method_name, "SetDelay") == 0)
     {
-        //TK: TODO, not working!
+        //Set additinal delay between evrything
         //Looking for simple JSON lib for ESP32
-        char resp[200];
         sprintf_s(resp, sizeof(resp), "{ \"Response\": \"JSON Like {\"DelayMs\":1} required\" }");
         //Simplification, message look like: {"DelayMs":1}, 11
         //                                   01234567890123
@@ -249,6 +270,78 @@ static int DeviceMethodCallback(const char *method_name, const unsigned char *pa
             else
             {
                 sprintf_s(resp, sizeof(resp), "{ \"Response\": \"Delay, invalid number:%.*s \" }", (int)size-14, (const char *)num);
+            }
+        }
+        RESPONSE_STRING = resp;
+    }
+    else if (strcmp(method_name,"SetRelay") == 0)
+    {
+        //Set Relay state 0/1
+        /*
+        {"Relay":1,"State":0}
+        0123456789012345678901234
+        {\"Relay\":1,\"State\":0}
+        */
+        sprintf_s(resp, sizeof(resp), "{ \"Response\": \"JSON Like {\"Relay\":1,\"State\":0}");
+        if (strlen((const char *)payload) >= 24 ) 
+        {
+            const char *relay = (const char *)payload + 12;
+            const char *state = (const char *)payload + 24;
+            int r = strtol(relay,(const char *)(relay+1),10);
+            int s = strtol(state,(const char *)(state+1),10);  
+            if (r==1) {
+                gpio_set_level((gpio_num_t)OLIMEX_REL1_PIN, s);
+
+            } else if (r==2) {
+                gpio_set_level((gpio_num_t)OLIMEX_REL2_PIN, s);
+            }
+        }
+        RESPONSE_STRING = resp;
+    }
+    else if (strcmp(method_name,"SetTreshold") == 0)
+    {
+        //Set treashold for NOT sending message
+        //If outside - send every SetDelay second
+        /*
+        {"Min":-012.00,"Max":+020.00}
+        012345678901234567890123456789012
+        {\"Min\":-012.00,\"Max\":+020.00}
+        */
+        sprintf_s(resp, sizeof(resp), "{ \"Response\": \"JSON Like {\"Min\":-012.00,\"Max\":+020.00}");
+        if (strlen((const char *)payload) >= 32 ) 
+        {
+            const char *minstr = (const char *)payload + 10;
+            const char *maxstr = (const char *)payload + 26;
+            float min = strtof(minstr,minstr+6);
+            float max = strtof(maxstr,maxstr+6);
+            if (min<=max) {
+                tMin = min;
+                tMax = max;
+                sprintf_s(resp, sizeof(resp), "{ \"Response\": \"Allowed range: %f - %f}\"}",tMin,tMax);
+            }  
+        }
+        RESPONSE_STRING = resp;
+    }
+    else if (strcmp(method_name, "SetNormalMsgDelay") == 0)
+    {
+        //Set delay between normal messages (5 minutes or so, larger than)
+        //Looking for simple JSON lib for ESP32
+        sprintf_s(resp, sizeof(resp), "{ \"Response\": \"JSON Like {\"DelayMs\":1} required\" }");
+        //Simplification, message look like: {"DelayMs":1}, 11
+        //                                   01234567890123
+        //                                   {\"DelayMs\":1}
+        if (strlen((const char *)payload) >= 16)
+        {
+            const char *num = (const char *)payload + 14;
+            int l = strtol(num, NULL, 10);
+            if (l > 0 && l < 100000)
+            {
+                NormalMsgDelayMs = l;
+                sprintf_s(resp, sizeof(resp), "{ \"Response\": \"SetNormalMsgDelay, set to %d\" }", NormalMsgDelayMs);
+            }
+            else
+            {
+                sprintf_s(resp, sizeof(resp), "{ \"Response\": \"SetNormalMsgDelay, invalid number:%.*s \" }", (int)size-14, (const char *)num);
             }
         }
         RESPONSE_STRING = resp;
@@ -279,6 +372,22 @@ static void IRAM_ATTR gpio_isr_handler(void *arg)
     uint32_t gpio_num = (uint32_t)arg;
 }
 
+//Internal, undocumented
+uint8_t temprature_sens_read(); 
+float temperatureInternalReadC()
+{
+    return (temprature_sens_read() - 32) / 1.8;
+}
+
+#define	R0	((float)10000)
+#define	B	((float)3435)
+// R0 = 10000 [ohm]
+// B  = 3435
+// T0 = 25 [C] = 298.15, [K]
+// r = (ADC_MAX * R0) / (ADC_VAL) - R0
+// R_ = R0 * e ^ (-B / T0), [ohm] --> const ~= 0.09919 (10K);
+// T = B/ln (r/R_), [K]
+
 void tkSendEvents()
 {
     //Setup watchdog - live
@@ -286,12 +395,17 @@ void tkSendEvents()
     CHECK_ERROR_CODE(esp_task_wdt_status(NULL), ESP_OK);    
     //esp_task_wdt_feed();
 
+    //Touch
+    touch_pad_init();
+    touch_pad_config(TOUCH, TOUCH_THRESH_NO_USE);
+
     //Setup adc
     adc1_config_width(ADC_WIDTH_12Bit);
-    adc1_config_channel_atten(ADC1_CHANNEL_0, ADC_ATTEN_11db); //Connect light sensor to 3.3 V
-    int val = adc1_get_raw(ADC1_CHANNEL_0);                    //GPIO36
+    adc1_config_channel_atten(ADC1_CHANNEL_6, ADC_ATTEN_DB_11); //3.3 V, GPIO34
+    int val = 0;
     //HAL
-    int valh = hall_sensor_read();
+    int valh=0;
+    float temp_internal = 0;
     //Setup pin to read - complicated, Z:\TSGIT\2017ESP32\esp-idf\examples\peripherals\gpio\main\gpio_example_main.c
     //TODO
     //Led
@@ -347,7 +461,13 @@ void tkSendEvents()
             {
                 //TK: Uncomment to trigger watchdog
                 //if (callbackCounter>5) continue;
-                val = adc1_get_raw(ADC1_CHANNEL_0); //GPIO36
+
+                //Touch
+                uint16_t touch_value;
+                touch_pad_set_voltage(TOUCH_HVOLT_2V7, TOUCH_LVOLT_0V5, TOUCH_HVOLT_ATTEN_0V);
+                touch_pad_read(TOUCH, &touch_value);
+
+                val = adc1_get_raw(ADC1_CHANNEL_6); //GPIO34
                 valh = hall_sensor_read();
                 time_t now = time (0);
                 strftime (buff, sizeof(buff), "%Y-%m-%dT%H:%M:%S.0000000Z", localtime (&now));
@@ -357,14 +477,23 @@ void tkSendEvents()
                 // float vol = (val * 5.0) / 4096.0;
                 // float temp = 100.0 * vol;
 
-                float vol = ((val) * 4.9) / 4096.0;
-                float temp = 10.0 * vol;
-                int dhtresult = readDHT22();//Will set humidity,temperature
-                printf("%d",dhtresult); 
-                sprintf_s(msgText, sizeof(msgText), 
+                //float vol = ((val) * 4.9) / 4096.0;
+                //float temp = 10.0 * vol;
+                float r = ((4095.0*R0)/(float)val)-R0;
+                float temp = B/log(r/0.09919) - 273.15;	// log is ln in this case
+
+
+                int dhtresult=0;
+                dhtresult = readDHT22();//Will set humidity,temperature
+                //printf("%d",dhtresult); 
                 
-"{\"deviceId\":\"ESP32_IDF_EVB\",\"msgType\":\"esp32idfevb\",\"dt\":\"%s\", \"callbackCounter\":%d, \"dhthum\":%d,  \"dhttemp\":%d, \"temp\":%f, \"data\":%d,\"datad\":%d,\"hall\":%d}",
-buff,callbackCounter,
+                temp_internal = temperatureInternalReadC(); 
+                sprintf_s(msgText, sizeof(msgText), 
+"{\"deviceId\":\"ESP32_IDF_GATEWAY\",\"msgType\":\"esp32idfevb3\", \"dt\":\"%s\", \"touch\":%d, \"deltat\":%f, \"temp_internal\":%f, \"callbackCounter\":%d, \"dhthum\":%d,  \"dhttemp\":%d, \"temp\":%f, \"data\":%d,\"datad\":%d,\"hall\":%d}",
+buff,
+touch_value,
+(float)(temp-getTemperature()),
+temp_internal,callbackCounter,
 getHumidity(),getTemperature(), temp, val, vald, valh);
                 (void)printf("%s\r\n", msgText);
                 if ((msg = IoTHubMessage_CreateFromByteArray((const unsigned char *)msgText, strlen(msgText))) == NULL)
